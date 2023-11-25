@@ -22,11 +22,12 @@ const float ZOOM = 0.60;
 const float EPSI = 0.005;
 const float SUN_BRIGHTNESS = 10.;
 const float SUN_SIZE = 0.05;
+const float RAYLIGH_SCATTER_COEF = 0.0;
 const bool ENABLE_EXACT_CLOSEST_APPROACH_SEARCH = false;
 const bool ENABLE_AMBIENT_OCCLUSION = false;
 const bool ENABLE_DAMN_PYRAMID = true;
-const bool ENABLE_DUST = false;
-float VCJDECLIPSESIZE = 2.5;
+const bool ENABLE_DUST = true;
+float VCJDECLIPSESIZE = -0.0001;
 vec3 LIGHT_DIR = normalize(vec3(0.,5.09,-0.01)); // sin(u_time*0.25)+(1.-.34873)
 vec3 AMBIENT = vec3(0.05,0.08,0.1);//vec3(0.392,0.632,1.000);
 
@@ -450,17 +451,18 @@ vec3 sky_color_in_direction(vec3 p){
 	
 	vec3 norhtern_lights;
 	
-	if(ENABLE_DAMN_PYRAMID && VCJDECLIPSESIZE > 2.)
+	if(true || ENABLE_DAMN_PYRAMID && VCJDECLIPSESIZE > 2.)
 	{ //damn northern lights
+		float accurateProjectedHight = tan(p.z * PI_C / 2. - EPSI) / (PI_C / 2.);
 		float angle = trueAngle(p.x, p.y);
-		float height1 = p.z / 0.1 - 1.5 + 
+		float height1 = accurateProjectedHight / 0.1 - 1.5 + 
 			sin(27. * angle + u_time * 0.25) * 0.1 + 
 			cos(angle * 21. - u_time * 0.34) * 0.07;
 		float puff = octaves(vec2(height1/9., angle*3.), vec2(u_time, 0.)*0.2, 4) /
 			max(abs(height1) + 0.5, 0.) * 0.3;
 		
-		float height2 = p.z / 0.07 - 1.7;
-		float height4 =  p.z / 0.2 - 5.5 + 
+		float height2 = accurateProjectedHight / 0.07 - 1.7;
+		float height4 =  accurateProjectedHight / 0.2 - 5.5 + 
 			sin(19. * angle + u_time * 0.55) * 0.31 + 
 			cos(angle * 34. - u_time * 0.74) * 0.17;		
 		float height3 = (height1 + height2 + height4) * 0.5 + 0.18; 
@@ -472,7 +474,7 @@ vec3 sky_color_in_direction(vec3 p){
 		puff += octaves(vec2(height2 + angle * 2.1, angle * 1.3)*0.2, vec2(0.02*u_time,0.), 4) * 1.7;
 
 		puff = pow(abs(puff), 1.95) * 0.25 * (clamp(-pow(height3, 2.) + 4.5, 0., 1.) + clamp(abs(height4 - 2.) + 0.5, 0., 1.));
-		puff *= p.z / (0.1 + p.z);
+		puff *= max(accurateProjectedHight / (0.1 + accurateProjectedHight) * (0.1) / (0.1 + accurateProjectedHight) / 0.25, 0.);
 		
 		norhtern_lights = vec3(0.01, puff, 0.5) * puff;
 	}
@@ -502,7 +504,7 @@ vec3 get_color_with_shadows(vec3 p){
 	
 	float normal_light_dot = dot(normal, LIGHT_DIR);
 	if(normal_light_dot < EPSI)
-		return color_map(p)*AMBIENT;
+		return color_map(p) * AMBIENT;
 	
 	max_approach_point _map = rayMarcher(maps.collision_map, p, LIGHT_DIR, dist, iter_count, true);
 	float shade_marched = 0.;
@@ -521,7 +523,7 @@ vec3 get_color_with_shadows(vec3 p){
 	}
 	
 	shade_marched *= pow(abs(dot(normal, LIGHT_DIR)),3.);
-	
+		
 	if(false && _map._debug < -50.)
 		return vec3(1.,0.,0.);
 	
@@ -550,14 +552,18 @@ vec4 reflected_raymarching(vec3 start_position, vec3 direction){
 		float reflection_coef = general_map(maps.reflection_map, endpoint);
 		vec4 cur_color;
 		bool is_sky = length(start_position - endpoint) > float(MAX_DIST);
+		
+		vec4 visibility = pow(vec4(0.9, 0.8, 0.6, 1.), vec4(dist*RAYLIGH_SCATTER_COEF));
+		
 		if(!is_sky){
 			cur_color = vec4(get_color_with_shadows(endpoint),1.0) * (1. - 0.0*shading);
-			color += cur_color*accumulating_reflection_coef*(1. - reflection_coef);
+				
+			color += cur_color*accumulating_reflection_coef*(1. - reflection_coef)*visibility;
 			accumulating_reflection_coef *= reflection_coef;
 		}
 		else{
 			cur_color = vec4(sky_color_in_direction(endpoint - start_position),1.);
-			color += cur_color*accumulating_reflection_coef;
+			color += cur_color*accumulating_reflection_coef*visibility;
 		}
 		
 		if(reflection_coef < float(EPSI) || is_sky)
@@ -575,7 +581,7 @@ void _mainImage(out vec4 fragColor, in vec2 fragCoord )
 	vec2 uv = (fragCoord-0.5*u_resolution.xy)/u_resolution.x * ZOOM; 
 	vec3 start_position = position;
 	vec3 direction = normalize(vec3(uv.x,1.,uv.y)); 
-	direction = rotateY(direction, -0.1*PI_C*(mouse.y - 0.5));
+	direction = rotateY(direction, -2.*PI_C*(mouse.y - 0.5));
 	direction = rotateX(direction, 2.*PI_C*(mouse.x - 0.5));   
 	
 	fragColor = reflected_raymarching(position, direction);
