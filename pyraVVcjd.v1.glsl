@@ -15,18 +15,18 @@ vec3 position = vec3(-1.,16.,0.01);//vec3(-7.,-8.,2);
 
 #define PI_C 3.14159265358979323846
 
-const int MAX_ITERS = 300;
-const int MAX_DIST = 50;
+const int MAX_ITERS = 500;
+const int MAX_DIST = 20;
 const int MAX_REFLECTIONS = 5;
 const float ZOOM = 0.60;
-const float EPSI = 0.005;
+const float EPSI = 0.0005;
 const float SUN_BRIGHTNESS = 5.;
 const float SUN_SIZE = 0.05;
 const bool ENABLE_EXACT_CLOSEST_APPROACH_SEARCH = false;
 const bool ENABLE_AMBIENT_OCCLUSION = false;
 const bool ENABLE_DAMN_PYRAMID = true;
 const bool ENABLE_DUST = false;
-float VCJDECLIPSESIZE = 2.5;
+float VCJDECLIPSESIZE = 2.01;
 vec3 LIGHT_DIR = normalize(vec3(0.,5.09,0.04)); // sin(u_time*0.25)+(1.-.34873)
 vec3 AMBIENT = vec3(0.05,0.08,0.1);//vec3(0.392,0.632,1.000);
 
@@ -184,7 +184,7 @@ float collision_map(vec3 p)
 	float box3x = sdBox(rotateY(rotateZ(rotateX(p - vec3(-0.95, 18.45, -0.17), 2.7), 0.45), 0.1), vec3(0.2,0.2,0.1));
 	float plane = sdPlane(p - vec3(-1.1, 18.5, -0.1), vec4(0,-0.02,1,-0.05));
 	
-	//return plane;
+	return plane;
 	return min(min(box1, box2), min(plane, min(box3x, box3)));//min(, plane);
 }
 
@@ -495,7 +495,7 @@ vec3 sky_color_in_direction(vec3 p){
 			float flicker = 
 				abs(sin(u_time * 7.88) + cos(u_time * 11.44) - sin(u_time * 5.31)) * 
 				fadeout_time + u_time / (u_time + fadeout_flicker_time);
-			float flare_v = clamp(-abs(dirdiff.x)*0.8 + 0.005, 0., 0.09) * 200. * flicker;
+			float flare_v = clamp(-abs(dirdiff.x)*0.8 + 0.005, 0., 0.09) * 40. * (flicker*0.125 + 2.5);
 			float flare_h = 5.0 * flicker / abs((height - p_z_cutoff_hi)*19.3 + EPSI) * clamp(-pow(dirdiff.x, 2.)*(3. - flicker)*97. + 0.01, 0., 1.);
 			
 			const float special_dist_p = 0.5;
@@ -509,6 +509,7 @@ vec3 sky_color_in_direction(vec3 p){
 			
 			outtershell += 
 				0.21*clamp(-abs(dirdiff.z - dirdiff.y - 2.4 * dirdiff.x + pyrasize)*thickness + 0.0024, 0., 0.03);
+			outtershell -= legs_flare;
 		}
 		
 		outtershell *= 
@@ -643,24 +644,25 @@ vec4 postprocess(vec4 localColor, vec2 fragCoord)
 	
 	if(ENABLE_DUST)
 	{
-		float dust1 = pow(octaves(vec2(-u_time*0.009) + (position)*1.5, vec2((-u_time*0.15)), 4), 0.3)*0.1;
+		vec2 positionWithMouse = position + mouse;
+		float dust1 = pow(octaves(vec2(-u_time*0.009) + (positionWithMouse)*1.5, vec2((-u_time*0.15)), 4), 0.3)*0.1;
 		float dust2 = pow(octaves(
 			vec2(-u_time*0.07, u_time*0.02) + 
-				vec2(position.x * 0.6, position.y * 0.7),
+				vec2(positionWithMouse.x * 0.6, positionWithMouse.y * 0.7),
 			vec2(-u_time*0.19, u_time*0.1),
 			4), 0.3)*0.2;
 		float dust3 = pow(octaves(
 			vec2(u_time*0.09, -u_time*0.03) + 
-				vec2(position.x * 0.4, -position.y * 0.5),
+				vec2(positionWithMouse.x * 0.4, -positionWithMouse.y * 0.5),
 			vec2(-u_time*0.17, u_time*0.12),
 			12), 0.3)*0.1;
 		
 		float dust = dust1 + dust2;
-		localColor = max(localColor - 
-				 vec4(dust1,dust1,dust1,0.) +
+		vec4 totalDust = vec4(dust1,dust1,dust1,0.) +
 				 vec4(dust2,dust2,dust2,0.) -
-				 vec4(dust3,dust3,dust3,0.),
-			0.);
+				 vec4(dust3,dust3,dust3,0.);
+		
+		localColor = max(localColor * (1. - totalDust * 5.) + vec4(AMBIENT, 0.) * 0.5, 0.);
 	}
 	
 	return localColor;
